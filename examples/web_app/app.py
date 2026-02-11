@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections import Counter
 import io
 import json
+from pathlib import Path
 from typing import Any
 
 import langextract as lx
@@ -90,6 +91,44 @@ def _read_uploaded_file(uploaded_file: Any) -> str:
       continue
   raise ValueError(
       "Could not decode uploaded file as text. "
+      "Try txt/md/csv/json/pdf formats."
+  )
+
+
+def _read_local_file(file_path: str) -> str:
+  """Read text content from a local file path."""
+  resolved_path = Path(file_path).expanduser()
+  if not resolved_path.exists():
+    raise ValueError(f"File path does not exist: {resolved_path}")
+  if not resolved_path.is_file():
+    raise ValueError(f"Path is not a file: {resolved_path}")
+
+  raw_bytes = resolved_path.read_bytes()
+  if resolved_path.suffix.lower() == ".pdf":
+    if PdfReader is None:
+      raise ValueError(
+          "PDF support requires pypdf. Install dependencies from "
+          "examples/web_app/requirements.txt."
+      )
+    reader = PdfReader(io.BytesIO(raw_bytes))
+    page_texts = []
+    for page in reader.pages:
+      page_texts.append(page.extract_text() or "")
+    text = "\n".join(page_texts).strip()
+    if not text:
+      raise ValueError(
+          "The PDF exists but no extractable text was found. "
+          "Try an OCR-ready PDF or a text file."
+      )
+    return text
+
+  for encoding in ("utf-8", "latin-1", "cp1252"):
+    try:
+      return raw_bytes.decode(encoding)
+    except UnicodeDecodeError:
+      continue
+  raise ValueError(
+      "Could not decode local file as text. "
       "Try txt/md/csv/json/pdf formats."
   )
 
@@ -170,26 +209,43 @@ def _parse_examples_json(raw_json: str) -> list[lx.data.ExampleData]:
 
 def _resolve_input_text(
     uploaded_file: Any | None,
+    local_file_path: str,
     manual_text: str,
     combine_sources: bool,
 ) -> tuple[str, str]:
   """Build the input text and explain where it came from."""
+  local_file_path = local_file_path.strip()
   manual_text = manual_text.strip()
 
-  uploaded_text = ""
+  sources: list[tuple[str, str]] = []
+
   if uploaded_file is not None:
     uploaded_text = _read_uploaded_file(uploaded_file).strip()
+    if uploaded_text:
+      sources.append(("uploaded file", uploaded_text))
 
-  if uploaded_text and manual_text and combine_sources:
-    return f"{uploaded_text}\n\n{manual_text}", "uploaded file + manual text"
-  if uploaded_text:
-    return uploaded_text, "uploaded file"
+  if local_file_path:
+    local_file_text = _read_local_file(local_file_path).strip()
+    if local_file_text:
+      sources.append(("local file path", local_file_text))
+
   if manual_text:
-    return manual_text, "manual text"
+    sources.append(("manual text", manual_text))
 
-  raise ValueError(
-      "Provide either an uploaded file or text in the manual text field."
-  )
+  if not sources:
+    raise ValueError(
+        "Provide an uploaded file, a local file path, or manual text."
+    )
+
+  if combine_sources:
+    combined_text = "\n\n".join(text for _, text in sources)
+    combined_label = " + ".join(label for label, _ in sources)
+    return combined_text, combined_label
+
+  # Keep backward-compatible behavior: if multiple sources are provided,
+  # use the first source unless combine_sources is enabled.
+  return sources[0][1], sources[0][0]
+
 
 
 def _to_table_rows(document: lx.data.AnnotatedDocument) -> list[dict[str, Any]]:
@@ -244,7 +300,15 @@ def main() -> None:
     uploaded_file = st.file_uploader(
         "Upload a file",
         type=["txt", "md", "csv", "json", "pdf"],
-        help="Supported formats: txt, md, csv, json, pdf.",
+        help=(
+            "Supported formats: txt, md, csv, json, pdf. "
+            "If upload size is limited in your environment, use local file path."
+        ),
+    )
+    local_file_path = st.text_input(
+        "Local file path (optional, bypasses upload size limits)",
+        value="",
+        placeholder="~/Documents/large_document.pdf",
     )
 
     manual_text = st.text_area(
@@ -365,6 +429,7 @@ def main() -> None:
   try:
     input_text, source_label = _resolve_input_text(
         uploaded_file=uploaded_file,
+        local_file_path=local_file_path,
         manual_text=manual_text,
         combine_sources=combine_sources,
     )

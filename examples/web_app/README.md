@@ -3,9 +3,10 @@
 This example app lets you:
 
 1. Upload a document (`txt`, `md`, `csv`, `json`, `pdf`)
-2. Write a prompt describing what to extract
-3. Provide few-shot examples in JSON format
-4. Run `langextract` and review/download the results
+2. Or load a document from a local file path (useful for very large files)
+3. Write a prompt describing what to extract
+4. Provide few-shot examples in JSON format
+5. Run `langextract` and review/download the results
 
 ## Quick start
 
@@ -36,6 +37,12 @@ Run the app:
 ```bash
 python3 -m streamlit run examples/web_app/app.py
 ```
+
+## Large files
+
+If Streamlit upload limits block large files, use the **Local file path** field
+inside the app. This bypasses browser upload limits because the app reads the
+file directly from disk.
 
 ## Provider notes
 
