@@ -34,7 +34,7 @@ export LANGEXTRACT_API_KEY="your-api-key"
 Run the app:
 
 ```bash
-streamlit run examples/web_app/app.py
+python3 -m streamlit run examples/web_app/app.py
 ```
 
 ## Provider notes
